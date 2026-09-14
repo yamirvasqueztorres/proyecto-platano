@@ -1,0 +1,58 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Defina una URL PostgreSQL válida en .env}
+      SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY}
+      INITIAL_PASSWORD: ${INITIAL_PASSWORD:-Calidad2026!}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-480}
+      RETENTION_YEARS: ${RETENTION_YEARS:-3}
+      ENVIRONMENT: production
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+  backup:
+    build: ./backend
+    restart: unless-stopped
+    command: ["sh", "-c", "python backup.py; while true; do sleep 86400; python backup.py; done"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Defina una URL PostgreSQL válida en .env}
+      BACKUP_DIR: /backups
+    volumes:
+      - calidad_backups:/backups
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/ >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/api/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+volumes:
+  calidad_backups:

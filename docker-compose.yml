@@ -1,0 +1,76 @@
+services:
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-calidad360}
+      POSTGRES_USER: ${POSTGRES_USER:-calidad360}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Copie .env.example como .env y defina POSTGRES_PASSWORD}
+    volumes:
+      - calidad_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-calidad360} -d ${POSTGRES_DB:-calidad360}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-calidad360}
+      POSTGRES_USER: ${POSTGRES_USER:-calidad360}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+      POSTGRES_HOST: database
+      POSTGRES_PORT: 5432
+      SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY}
+      INITIAL_PASSWORD: ${INITIAL_PASSWORD:-Calidad2026!}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-480}
+      RETENTION_YEARS: ${RETENTION_YEARS:-3}
+      ENVIRONMENT: production
+    depends_on:
+      database:
+        condition: service_healthy
+  backup:
+    build: ./backend
+    restart: unless-stopped
+    command: ["sh", "-c", "python backup.py; while true; do sleep 86400; python backup.py; done"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-calidad360}
+      POSTGRES_USER: ${POSTGRES_USER:-calidad360}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+      POSTGRES_HOST: database
+      POSTGRES_PORT: 5432
+      BACKUP_DIR: /backups
+    volumes:
+      - calidad_backups:/backups
+    depends_on:
+      database:
+        condition: service_healthy
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    depends_on: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/ >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [frontend, backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/api/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+volumes:
+  calidad_db:
+  calidad_backups:
