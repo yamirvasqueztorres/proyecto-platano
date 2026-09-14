@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+.local
+.next
+.sites-runtime
+.wrangler
+backend
+dist
+docs
+node_modules
+outputs
+tests
+work
+*.db
+*.sqlite3
+*.zip
